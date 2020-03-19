@@ -4,13 +4,12 @@ possible.
 
 ## Pull Requests
 We actively welcome your pull requests.
+But note that this is a research project for reproducing results in a paper,
+we may not accept PRs adding new features if they do not align with the goal of reproducing
+results in the paper.
 
-1. Fork the repo and create your branch from `master`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints.
-6. If you haven't already, complete the Contributor License Agreement ("CLA").
+If you haven't already, complete the Contributor License Agreement ("CLA") before sending a pull
+request.
 
 ## Contributor License Agreement ("CLA")
 In order to accept your pull request, we need you to submit a CLA. You only need
