@@ -5,7 +5,12 @@ import os
 
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
+from detectron2.engine import (
+    DefaultTrainer,
+    default_argument_parser,
+    default_setup,
+    launch,
+)
 from detectron2.evaluation import COCOEvaluator, PascalVOCDetectionEvaluator
 from detectron2.layers import get_norm
 from detectron2.modeling.roi_heads import ROI_HEADS_REGISTRY, Res5ROIHeads
@@ -17,6 +22,7 @@ class Res5ROIHeadsExtraNorm(Res5ROIHeads):
     As described in the MOCO paper, there is an extra BN layer
     following the res5 stage.
     """
+
     def _build_res5_block(self, cfg):
         seq, out_channels = super()._build_res5_block(cfg)
         norm = cfg.MODEL.RESNETS.NORM
