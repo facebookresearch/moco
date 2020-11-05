@@ -8,7 +8,8 @@ MODEL:
   BACKBONE:
     FREEZE_AT: 0
   RESNETS:
-    NORM: "SyncBN"
+    # SyncBN seems to cause larger variance for unknown reasons
+    NORM: "naiveSyncBN"
 TEST:
   PRECISE_BN:
     ENABLED: True
