@@ -23,12 +23,11 @@ class Res5ROIHeadsExtraNorm(Res5ROIHeads):
     following the res5 stage.
     """
 
-    def _build_res5_block(self, cfg):
-        seq, out_channels = super()._build_res5_block(cfg)
+    def __init__(self, cfg, input_shape):
+        super().__init__(cfg, input_shape)
         norm = cfg.MODEL.RESNETS.NORM
-        norm = get_norm(norm, out_channels)
-        seq.add_module("norm", norm)
-        return seq, out_channels
+        norm = get_norm(norm, self.res5[-1].out_channels)
+        self.res5.add_module("norm", norm)
 
 
 class Trainer(DefaultTrainer):
