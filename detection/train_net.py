@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import os
 
