@@ -6,14 +6,14 @@ import os
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import (
-    DefaultTrainer,
     default_argument_parser,
     default_setup,
+    DefaultTrainer,
     launch,
 )
 from detectron2.evaluation import COCOEvaluator, PascalVOCDetectionEvaluator
 from detectron2.layers import get_norm
-from detectron2.modeling.roi_heads import ROI_HEADS_REGISTRY, Res5ROIHeads
+from detectron2.modeling.roi_heads import Res5ROIHeads, ROI_HEADS_REGISTRY
 
 
 @ROI_HEADS_REGISTRY.register()
