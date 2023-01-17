@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 # This source code is licensed under the MIT license found in the
@@ -8,7 +7,9 @@
 
 import pickle as pkl
 import sys
+
 import torch
+
 
 if __name__ == "__main__":
     input = sys.argv[1]

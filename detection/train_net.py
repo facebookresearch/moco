@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 # This source code is licensed under the MIT license found in the
@@ -10,10 +9,15 @@ import os
 
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
+from detectron2.engine import (
+    default_argument_parser,
+    default_setup,
+    DefaultTrainer,
+    launch,
+)
 from detectron2.evaluation import COCOEvaluator, PascalVOCDetectionEvaluator
 from detectron2.layers import get_norm
-from detectron2.modeling.roi_heads import ROI_HEADS_REGISTRY, Res5ROIHeads
+from detectron2.modeling.roi_heads import Res5ROIHeads, ROI_HEADS_REGISTRY
 
 
 @ROI_HEADS_REGISTRY.register()
@@ -22,12 +26,12 @@ class Res5ROIHeadsExtraNorm(Res5ROIHeads):
     As described in the MOCO paper, there is an extra BN layer
     following the res5 stage.
     """
-    def _build_res5_block(self, cfg):
-        seq, out_channels = super()._build_res5_block(cfg)
+
+    def __init__(self, cfg, input_shape):
+        super().__init__(cfg, input_shape)
         norm = cfg.MODEL.RESNETS.NORM
-        norm = get_norm(norm, out_channels)
-        seq.add_module("norm", norm)
-        return seq, out_channels
+        norm = get_norm(norm, self.res5[-1].out_channels)
+        self.res5.add_module("norm", norm)
 
 
 class Trainer(DefaultTrainer):
