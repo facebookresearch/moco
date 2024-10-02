@@ -328,7 +328,8 @@ def main_worker(gpu, ngpus_per_node, args):
         augmentation = [
             transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
             transforms.RandomApply(
-                [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8  # not strengthened
+                [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)],
+                p=0.8,  # not strengthened
             ),
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomApply([moco.loader.GaussianBlur([0.1, 2.0])], p=0.5),
