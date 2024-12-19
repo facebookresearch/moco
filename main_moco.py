@@ -15,8 +15,8 @@ import shutil
 import time
 import warnings
 
-import moco.builder
-import moco.loader
+import deeplearning.cross_image_ssl.moco.builder
+import deeplearning.cross_image_ssl.moco.loader
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -245,7 +245,7 @@ def main_worker(gpu, ngpus_per_node, args):
         )
     # create model
     print("=> creating model '{}'".format(args.arch))
-    model = moco.builder.MoCo(
+    model = deeplearning.cross_image_ssl.moco.builder.MoCo(
         models.__dict__[args.arch],
         args.moco_dim,
         args.moco_k,
@@ -332,7 +332,10 @@ def main_worker(gpu, ngpus_per_node, args):
                 p=0.8,  # not strengthened
             ),
             transforms.RandomGrayscale(p=0.2),
-            transforms.RandomApply([moco.loader.GaussianBlur([0.1, 2.0])], p=0.5),
+            transforms.RandomApply(
+                [deeplearning.cross_image_ssl.moco.loader.GaussianBlur([0.1, 2.0])],
+                p=0.5,
+            ),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -349,7 +352,10 @@ def main_worker(gpu, ngpus_per_node, args):
         ]
 
     train_dataset = datasets.ImageFolder(
-        traindir, moco.loader.TwoCropsTransform(transforms.Compose(augmentation))
+        traindir,
+        deeplearning.cross_image_ssl.moco.loader.TwoCropsTransform(
+            transforms.Compose(augmentation)
+        ),
     )
 
     if args.distributed:
