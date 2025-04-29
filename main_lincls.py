@@ -157,7 +157,7 @@ parser.add_argument(
 best_acc1 = 0
 
 
-def main():
+def main() -> None:
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -196,19 +196,20 @@ def main():
         main_worker(args.gpu, ngpus_per_node, args)
 
 
-def main_worker(gpu, ngpus_per_node, args):
+def main_worker(gpu, ngpus_per_node, args) -> None:
     global best_acc1
     args.gpu = gpu
 
     # suppress printing if not master
     if args.multiprocessing_distributed and args.gpu != 0:
 
-        def print_pass(*args):
+        def print_pass(*args) -> None:
             pass
 
         builtins.print = print_pass
 
     if args.gpu is not None:
+        # pyre-fixme[61]: `print` is undefined, or not always defined.
         print("Use GPU: {} for training".format(args.gpu))
 
     if args.distributed:
@@ -225,6 +226,7 @@ def main_worker(gpu, ngpus_per_node, args):
             rank=args.rank,
         )
     # create model
+    # pyre-fixme[61]: `print` is undefined, or not always defined.
     print("=> creating model '{}'".format(args.arch))
     model = models.__dict__[args.arch]()
 
@@ -239,6 +241,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # load from pre-trained, before DistributedDataParallel constructor
     if args.pretrained:
         if os.path.isfile(args.pretrained):
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print("=> loading checkpoint '{}'".format(args.pretrained))
             checkpoint = torch.load(args.pretrained, map_location="cpu")
 
@@ -258,8 +261,10 @@ def main_worker(gpu, ngpus_per_node, args):
             msg = model.load_state_dict(state_dict, strict=False)
             assert set(msg.missing_keys) == {"fc.weight", "fc.bias"}
 
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print("=> loaded pre-trained model '{}'".format(args.pretrained))
         else:
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print("=> no checkpoint found at '{}'".format(args.pretrained))
 
     if args.distributed:
@@ -306,6 +311,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print("=> loading checkpoint '{}'".format(args.resume))
             if args.gpu is None:
                 checkpoint = torch.load(args.resume)
@@ -320,12 +326,14 @@ def main_worker(gpu, ngpus_per_node, args):
                 best_acc1 = best_acc1.to(args.gpu)
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print(
                 "=> loaded checkpoint '{}' (epoch {})".format(
                     args.resume, checkpoint["epoch"]
                 )
             )
         else:
+            # pyre-fixme[61]: `print` is undefined, or not always defined.
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
@@ -387,6 +395,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
+            # pyre-fixme[16]: Optional type has no attribute `set_epoch`.
             train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
@@ -417,7 +426,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 sanity_check(model.state_dict(), args.pretrained)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion, optimizer, epoch, args) -> None:
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -514,13 +523,13 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
+def save_checkpoint(state, is_best, filename: str = "checkpoint.pth.tar") -> None:
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, "model_best.pth.tar")
 
 
-def sanity_check(state_dict, pretrained_weights):
+def sanity_check(state_dict, pretrained_weights) -> None:
     """
     Linear classifier should not change any weights other than the linear layer.
     This sanity check asserts nothing wrong happens (e.g., BN stats updated).
@@ -551,35 +560,35 @@ def sanity_check(state_dict, pretrained_weights):
 class AverageMeter:
     """Computes and stores the average and current value"""
 
-    def __init__(self, name, fmt=":f"):
+    def __init__(self, name, fmt: str = ":f") -> None:
         self.name = name
         self.fmt = fmt
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
-    def update(self, val, n=1):
+    def update(self, val, n: int = 1) -> None:
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
 
-    def __str__(self):
+    def __str__(self) -> str:
         fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
         return fmtstr.format(**self.__dict__)
 
 
 class ProgressMeter:
-    def __init__(self, num_batches, meters, prefix=""):
+    def __init__(self, num_batches, meters, prefix: str = "") -> None:
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
         self.prefix = prefix
 
-    def display(self, batch):
+    def display(self, batch) -> None:
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         print("\t".join(entries))
@@ -590,7 +599,7 @@ class ProgressMeter:
         return "[" + fmt + "/" + fmt.format(num_batches) + "]"
 
 
-def adjust_learning_rate(optimizer, epoch, args):
+def adjust_learning_rate(optimizer, epoch, args) -> None:
     """Decay the learning rate based on schedule"""
     lr = args.lr
     for milestone in args.schedule:

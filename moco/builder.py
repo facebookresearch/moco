@@ -13,7 +13,15 @@ class MoCo(nn.Module):
     https://arxiv.org/abs/1911.05722
     """
 
-    def __init__(self, base_encoder, dim=128, K=65536, m=0.999, T=0.07, mlp=False):
+    def __init__(
+        self,
+        base_encoder,
+        dim: int = 128,
+        K: int = 65536,
+        m: float = 0.999,
+        T: float = 0.07,
+        mlp: bool = False,
+    ) -> None:
         """
         dim: feature dimension (default: 128)
         K: queue size; number of negative keys (default: 65536)
@@ -53,7 +61,7 @@ class MoCo(nn.Module):
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
     @torch.no_grad()
-    def _momentum_update_key_encoder(self):
+    def _momentum_update_key_encoder(self) -> None:
         """
         Momentum update of the key encoder
         """
@@ -63,7 +71,7 @@ class MoCo(nn.Module):
             param_k.data = param_k.data * self.m + param_q.data * (1.0 - self.m)
 
     @torch.no_grad()
-    def _dequeue_and_enqueue(self, keys):
+    def _dequeue_and_enqueue(self, keys) -> None:
         # gather keys before updating queue
         keys = concat_all_gather(keys)
 

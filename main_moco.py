@@ -177,7 +177,7 @@ parser.add_argument(
 parser.add_argument("--cos", action="store_true", help="use cosine lr schedule")
 
 
-def main():
+def main() -> None:
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -222,7 +222,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # suppress printing if not master
     if args.multiprocessing_distributed and args.gpu != 0:
 
-        def print_pass(*args):
+        def print_pass(*args) -> None:
             pass
 
         builtins.print = print_pass
@@ -396,7 +396,7 @@ def main_worker(gpu, ngpus_per_node, args):
             )
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion, optimizer, epoch, args) -> None:
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -444,7 +444,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             progress.display(i)
 
 
-def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
+def save_checkpoint(state, is_best, filename: str = "checkpoint.pth.tar") -> None:
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, "model_best.pth.tar")
@@ -453,35 +453,35 @@ def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
 class AverageMeter:
     """Computes and stores the average and current value"""
 
-    def __init__(self, name, fmt=":f"):
+    def __init__(self, name, fmt: str = ":f") -> None:
         self.name = name
         self.fmt = fmt
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
-    def update(self, val, n=1):
+    def update(self, val, n: int = 1) -> None:
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
 
-    def __str__(self):
+    def __str__(self) -> str:
         fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
         return fmtstr.format(**self.__dict__)
 
 
 class ProgressMeter:
-    def __init__(self, num_batches, meters, prefix=""):
+    def __init__(self, num_batches, meters, prefix: str = "") -> None:
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
         self.prefix = prefix
 
-    def display(self, batch):
+    def display(self, batch) -> None:
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         print("\t".join(entries))
@@ -492,7 +492,7 @@ class ProgressMeter:
         return "[" + fmt + "/" + fmt.format(num_batches) + "]"
 
 
-def adjust_learning_rate(optimizer, epoch, args):
+def adjust_learning_rate(optimizer, epoch, args) -> None:
     """Decay the learning rate based on schedule"""
     lr = args.lr
     if args.cos:  # cosine lr schedule
