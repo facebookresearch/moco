@@ -27,9 +27,10 @@ class Res5ROIHeadsExtraNorm(Res5ROIHeads):
     following the res5 stage.
     """
 
-    def __init__(self, cfg, input_shape):
+    def __init__(self, cfg, input_shape) -> None:
         super().__init__(cfg, input_shape)
         norm = cfg.MODEL.RESNETS.NORM
+        # pyre-fixme[29]: `Union[Tensor, Module]` is not a function.
         norm = get_norm(norm, self.res5[-1].out_channels)
         self.res5.add_module("norm", norm)
 
