@@ -7,7 +7,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from torch.utils.data import DataLoader
+from PIL import Image
 
+import pandas as pd
 import argparse
 import builtins
 import math
@@ -17,8 +20,8 @@ import shutil
 import time
 import warnings
 
-import deeplearning.cross_image_ssl.moco.builder
-import deeplearning.cross_image_ssl.moco.loader
+import moco.builder
+import moco.loader
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -30,8 +33,11 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision.models as models
-import torchvision.transforms as transforms
 
+# import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
+
+import webdataset as wds
 
 model_names = sorted(
     name
@@ -40,7 +46,8 @@ model_names = sorted(
 )
 
 parser = argparse.ArgumentParser(description="PyTorch ImageNet Training")
-parser.add_argument("data", metavar="DIR", help="path to dataset")
+parser.add_argument("--pretrain_dir", help="path to pretrain dataset")
+parser.add_argument("--val_dir", help="path to validation datasets")
 parser.add_argument(
     "-a",
     "--arch",
@@ -77,6 +84,7 @@ parser.add_argument(
     "batch size of all GPUs on the current node when "
     "using Data Parallel or Distributed Data Parallel",
 )
+parser.add_argument("--num-pretrain", type=int, help="number of pretrain samples")
 parser.add_argument(
     "--lr",
     "--learning-rate",
@@ -120,6 +128,7 @@ parser.add_argument(
     metavar="PATH",
     help="path to latest checkpoint (default: none)",
 )
+parser.add_argument("--checkpoint-dir", type=str, help="path to checkpoint dir")
 parser.add_argument(
     "--world-size",
     default=-1,
@@ -179,6 +188,60 @@ parser.add_argument(
 parser.add_argument("--cos", action="store_true", help="use cosine lr schedule")
 
 
+class ImageDataset(Dataset):
+    """Simple dataset for loading images"""
+
+    def __init__(
+        self, image_dir, image_list, labels=None, resolution=224, transform=None
+    ):
+        """
+        Args:
+            image_dir: Directory containing images
+            image_list: List of image filenames
+            labels: List of labels (optional, for train/val)
+            resolution: Image resolution (96 for competition, 224 for DINO baseline)
+        """
+        self.image_dir = image_dir
+        self.image_list = image_list
+        self.labels = labels
+        self.resolution = resolution
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_list)
+
+    def __getitem__(self, idx):
+        img_name = self.image_list[idx]
+        img_path = os.path.join(self.image_dir, img_name)
+
+        # Load and resize image
+        image = Image.open(img_path).convert("RGB")
+        image = image.resize((self.resolution, self.resolution), Image.BILINEAR)
+        image = self.transform(image)
+
+        if self.labels is not None:
+            return image, self.labels[idx], img_name
+
+        return image, img_name
+
+
+def img_collate_fn(batch, *, labels, filenames=False):
+    """Custom collate function to handle PIL images"""
+    if labels:
+        images = torch.stack([item[0] for item in batch])
+        labels = torch.stack([torch.tensor(item[1]) for item in batch])
+
+        return images, labels
+
+    else:
+        images = torch.stack([item[0] for item in batch])
+        if filenames:
+            filenames = [item[1] for item in batch]
+            return images, filenames
+        else:
+            return images
+
+
 def main() -> None:
     args = parser.parse_args()
 
@@ -218,6 +281,186 @@ def main() -> None:
         main_worker(args.gpu, ngpus_per_node, args)
 
 
+def make_val_loaders(val_name, args, normalize, num_classes):
+    val_root = os.path.join(args.val_dir, val_name, "data")
+
+    train_df = pd.read_csv(os.path.join(val_root, "train_labels.csv"))
+    val_df = pd.read_csv(os.path.join(val_root, "val_labels.csv"))
+    test_df = pd.read_csv(os.path.join(val_root, "test_images.csv"))
+    test_aug = transforms.Compose(
+        [
+            transforms.Resize(96),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            normalize,
+            # transforms.Normalize(mean=cfg_data.ds_mean, std=cfg_data.ds_std),
+        ]
+    )
+
+    train_aug = transforms.Compose(
+        [
+            transforms.Resize(96),
+            transforms.RandomResizedCrop(
+                96,
+                scale=(0.8, 1.0),
+                ratio=(0.9, 1.1),
+                interpolation=transforms.InterpolationMode.BICUBIC,
+                antialias=True,
+            ),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            normalize,
+            # transforms.Normalize(mean=cfg_data.ds_mean, std=cfg_data.ds_std),
+        ]
+    )
+
+    train_set = ImageDataset(
+        train_df["filename"].tolist(),
+        train_df["class_id"].tolist(),
+        resolution=96,
+        transform=train_aug,
+    )
+
+    val_set = ImageDataset(
+        os.path.join(val_root, "val"),
+        val_df["filename"].tolist(),
+        val_df["class_id"].tolist(),
+        resolution=96,
+        transform=test_aug,
+    )
+
+    test_set = ImageDataset(
+        os.path.join(val_root, "test"),
+        test_df["filename"].tolist(),
+        labels=None,
+        resolution=96,
+        transform=test_aug,
+    )
+    train_loader = DataLoader(
+        train_set,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.workers,
+        collate_fn=(lambda x: (img_collate_fn(x, labels=True))),
+        pin_memory=True,
+    )
+
+    val_loader = DataLoader(
+        val_set,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        collate_fn=(lambda x: (img_collate_fn(x, labels=True))),
+        pin_memory=True,
+    )
+
+    test_loader = DataLoader(
+        test_set,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        collate_fn=(lambda x: (img_collate_fn(x, labels=False, filenames=True))),
+        pin_memory=True,
+    )
+    return (
+        train_loader,
+        val_loader,
+        test_loader,
+        num_classes,
+    )
+
+
+@torch.no_grad()
+def extract_features(
+    feat_net,
+    loader,
+    device,
+):
+    feats, labels = [], []
+
+    for x, y in loader:
+        x = x.to(device, non_blocking=True)
+        # y = y.to(device, non_blocking=True)
+
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            f = feat_net(x)  # N x D
+
+        # cache to CPU:
+        # f = F.normalize(f.float(), dim=1).cpu()
+        feats.append(f.float().cpu())
+        labels.append(y)
+
+    feats = torch.cat(feats, dim=0)  # N x D
+    labels = torch.cat(labels, dim=0)  # N
+    return feats, labels
+
+
+def lp_update_and_predict(
+    val_feats,
+    train_feats,
+    train_labels,
+    *,
+    linear_probe,
+    num_classes,
+    epochs,
+    lr=1e-3,
+    weight_decay=1e-5,
+    batch_size=512,
+    device,
+):
+
+    assert (
+        torch.is_grad_enabled()
+    ), "Linear probe update is running under no_grad/inference_mode!"
+
+    optimizer = torch.optim.AdamW(
+        linear_probe.parameters(), lr=lr, weight_decay=weight_decay
+    )
+
+    # optimizer = torch.optim.SGD(
+    #     linear_probe.parameters(),
+    #     1e-3,
+    #     momentum=args.momentum,
+    #     weight_decay=args.weight_decay,
+    # )
+    # optimizer = torch.optim.SGD(linear_probe.parameters(), lr=0.1*(batch_size/256), momentum=0.9, nesterov=True, weight_decay=0.0)
+
+    criterion = nn.CrossEntropyLoss()
+
+    N = train_labels.shape[0]
+    # update:
+    linear_probe.train()
+    for _ in range(epochs):
+        order = torch.randperm(N)
+        for start_idx in range(0, N, batch_size):
+            idxs = order[start_idx : start_idx + batch_size]
+            x = train_feats[idxs].to(device)
+            y = train_labels[idxs].to(device)
+
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                logits = linear_probe(x)
+            loss = criterion(logits, y)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    # predict
+    linear_probe.eval()
+    preds = []
+    with torch.no_grad():
+        for start_idx in range(0, N, batch_size):
+            x = val_feats[start_idx : start_idx + batch_size].to(device)
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                logits = linear_probe(x)
+
+            pred = logits.argmax(1)
+            preds.append(pred)
+
+    return torch.cat(preds, dim=0)
+
+
 def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
@@ -247,7 +490,7 @@ def main_worker(gpu, ngpus_per_node, args):
         )
     # create model
     print("=> creating model '{}'".format(args.arch))
-    model = deeplearning.cross_image_ssl.moco.builder.MoCo(
+    model = moco.builder.MoCo(
         models.__dict__[args.arch],
         args.moco_dim,
         args.moco_k,
@@ -321,21 +564,23 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, "train")
+    # traindir = os.path.join(args.data, "train")
+    pretrain_dir = args.pretrain_dir
+    val_dir = args.val_dir
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
     if args.aug_plus:
         # MoCo v2's aug: similar to SimCLR https://arxiv.org/abs/2002.05709
         augmentation = [
-            transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+            transforms.RandomResizedCrop(96, scale=(0.2, 1.0)),
             transforms.RandomApply(
                 [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)],
                 p=0.8,  # not strengthened
             ),
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomApply(
-                [deeplearning.cross_image_ssl.moco.loader.GaussianBlur([0.1, 2.0])],
+                [moco.loader.GaussianBlur([0.1, 2.0])],
                 p=0.5,
             ),
             transforms.RandomHorizontalFlip(),
@@ -345,7 +590,7 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         # MoCo v1's aug: the same as InstDisc https://arxiv.org/abs/1805.01978
         augmentation = [
-            transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+            transforms.RandomResizedCrop(96, scale=(0.2, 1.0)),
             transforms.RandomGrayscale(p=0.2),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
             transforms.RandomHorizontalFlip(),
@@ -353,31 +598,64 @@ def main_worker(gpu, ngpus_per_node, args):
             normalize,
         ]
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        deeplearning.cross_image_ssl.moco.loader.TwoCropsTransform(
-            transforms.Compose(augmentation)
-        ),
+    # train_dataset = datasets.ImageFolder(
+    #     traindir,
+    #     moco.loader.TwoCropsTransform(transforms.Compose(augmentation)),
+    # )
+    train_dataset = (
+        (
+            wds.WebDataset(
+                f"{pretrain_dir}/shard-*.tar",
+                handler=wds.reraise_exception,
+                nodesplitter=wds.split_by_node if args.distributed else None,
+                shardshuffle=1000,
+            )
+            .map(lambda s: {"jpg": s["jpg"]})
+            .decode("torch")
+            .to_tuple("jpg")
+            .map(lambda x: x[0])
+        )
+        .shuffle(5000)
+        .map(moco.loader.TwoCropsTransform(transforms.Compose(augmentation)))
+        .batched(args.batch_size, partial=False)
     )
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = wds.WebLoader(
         train_dataset,
-        batch_size=args.batch_size,
-        shuffle=(train_sampler is None),
+        batch_size=None,  # Handled in pipeline
+        shuffle=False,  # Handled in pipeline
         num_workers=args.workers,
         pin_memory=True,
-        sampler=train_sampler,
-        drop_last=True,
-    )
+    ).with_epochs(args.num_pretrain // args.batch_size)
+
+    # if args.distributed:
+    #     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    # else:
+    #     train_sampler = None
+
+    # train_loader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     batch_size=args.batch_size,
+    #     shuffle=(train_sampler is None),
+    #     num_workers=args.workers,
+    #     pin_memory=True,
+    #     sampler=train_sampler,
+    #     drop_last=True,
+    # )
+
+    val_names = ["cub200", "minet", "sun397"]
+    val_loaders = {}
+    val_num_classes = {"cub200": 200, "minet": 64, "sun397": 397}
+    for val_name in val_names:
+        val_loaders[val_name] = make_val_loaders(
+            val_name, args, normalize, val_num_classes[val_name]
+        )
+
+    linear_probe = nn.Linear(model.encoder_q)
 
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
+        # if args.distributed:
+        #     train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
@@ -394,8 +672,38 @@ def main_worker(gpu, ngpus_per_node, args):
                     "optimizer": optimizer.state_dict(),
                 },
                 is_best=False,
-                filename="checkpoint_{:04d}.pth.tar".format(epoch),
+                filename="{args.checkpoint_dir}/moco.{:04d}.pth.tar".format(epoch),
             )
+            enc = model.encoder_q
+            enc.eval()
+
+            for val_name, (
+                val_train_loader,
+                val_val_loader,
+                _,
+                val_num_classes,
+            ) in val_loaders.items():
+
+                train_feats, train_labels = extract_features(
+                    enc, val_train_loader, device=device
+                )
+                val_feats, val_labels = extract_features(
+                    enc, val_val_loader, device=device
+                )
+                val_labels = val_labels.to(device)
+                preds = lp_update_and_predict(
+                    val_feats,
+                    train_feats,
+                    train_labels,
+                    linear_probe=linear_probe,
+                    num_classes=val_num_classes,
+                    epochs=2,
+                    batch_size=args.batch_size,
+                    device=device,
+                )
+                lp_acc = (preds == val_labels).float().mean().cpu().item()
+
+            enc.train()
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args) -> None:
@@ -414,7 +722,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args) -> None:
     model.train()
 
     end = time.time()
-    for i, (images, _) in enumerate(train_loader):
+    for i, images in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
